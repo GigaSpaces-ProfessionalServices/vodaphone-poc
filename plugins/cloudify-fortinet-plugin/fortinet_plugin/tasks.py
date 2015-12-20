@@ -92,10 +92,16 @@ def route_config(ctx, **kwargs):
     fortinet_host_ip = get_host_ip(ctx)
     ctx.logger.info('Fortinet_host_ip: {0}'.format(fortinet_host_ip))
 
-    gateway = inputs['gateway']
-    port_id = inputs['port_id']
-
     target_ip = '0.0.0.0'
+
+# if relationship is attached get the ip
+
+    for relationship in ctx.instance.relationships:
+        if 'connected_to' in relationship.type:
+            target_ip = relationship.target.instance.runtime_properties['fixed_ip_address']
+
+    gateway = inputs['gateway']
+    port_id = 3
     portMask = '0.0.0.0'
 
     set_route(ctx, fortinet_host_ip, gateway, target_ip, portMask, port_id)
