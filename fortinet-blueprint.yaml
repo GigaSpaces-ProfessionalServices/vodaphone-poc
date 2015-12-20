@@ -105,8 +105,8 @@ node_templates:
     interfaces:
       cloudify.interfaces.lifecycle:
         configure:
-#          implementation: fortinet.fortinet_plugin.tasks.port_config
-           implementation: fortinet.fortinet_plugin.tasks.test
+          implementation: fortinet.fortinet_plugin.tasks.port_config
+#           implementation: fortinet.fortinet_plugin.tasks.test
            executor: central_deployment_agent
 #        start:
 #           implementation: fortinet.fortinet_plugin.tasks.policy_config
