@@ -41,7 +41,147 @@ inputs:
   igw_router_name:
     default: ''
 
+node_types:
+
+  fortinet.port.config:
+    derived_from: cloudify.nodes.SoftwareComponent
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        configure:
+           implementation: fortinet.fortinet_plugin.tasks.port_config
+           executor: central_deployment_agent
+
+  fortinet.static.route:
+    derived_from: cloudify.nodes.SoftwareComponent
+
 node_templates:
+
+  FortinetHost:
+    type: cloudify.openstack.nodes.Server
+    properties:
+      install_agent: false
+      image: { get_input: fortinet_image }
+      flavor: { get_input: flavor }
+    relationships:
+      - target: admin_managment_ip
+        type: cloudify.openstack.server_connected_to_floating_ip
+      - target: lan_network_port
+        type: cloudify.openstack.server_connected_to_port
+      - target: wan_network_port
+        type: cloudify.openstack.server_connected_to_port
+
+  FortinetPortConfig:
+    type: fortinet.port.config
+    relationships:
+      - target: lan_network_port
+        type: cloudify.relationships.connected_to
+      - target: wan_network_port
+        type: cloudify.relationships.connected_to
+      - target: FortinetHost
+        type: cloudify.relationships.contained_in
+
+  FortinetStaticRouteConfig:
+    type: fortinet.static.route
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        configure:
+           implementation: fortinet.fortinet_plugin.tasks.route_config
+           executor: central_deployment_agent
+           inputs:
+               gateway: { get_attribute: [wan_network_subnet, gateway_ip] }
+               port_id: 3
+
+    relationships:
+      - target: wan_network_port
+        type: cloudify.relationships.connected_to
+      - target: FortinetHost
+        type: cloudify.relationships.contained_in
+      - target: FortinetPortConfig
+        type: cloudify.relationships.depends_on
+
+# Create floating ip to access admin gui
+
+  admin_managment_ip:
+    type: cloudify.openstack.nodes.FloatingIP
+    properties:
+      floatingip:
+        floating_network_name: { get_input: external_network_name }
+
+#  Create LAN network
+
+  lan_network:
+    type: cloudify.openstack.nodes.Network
+    properties:
+      resource_id: { get_input: lan_network_name }
+
+  lan_network_subnet:
+    type: cloudify.openstack.nodes.Subnet
+    properties:
+      resource_id: { get_input: lan_network_subnet_name }
+      subnet:
+        ip_version: 4
+        cidr: 192.168.1.99/24
+        gateway_ip: 192.168.1.99
+    relationships:
+      - target: lan_network
+        type: cloudify.relationships.contained_in
+
+  lan_network_port:
+    type: cloudify.openstack.nodes.Port
+    properties:
+      resource_id: { get_input: lan_network_port_name }
+    relationships:
+      - type: cloudify.relationships.contained_in
+        target: lan_network
+      - type: cloudify.relationships.depends_on
+        target: lan_network_subnet
+
+## Managment network will act as WAN network
+
+#  Create WAN network
+
+  wan_network:
+    type: cloudify.openstack.nodes.Network
+    properties:
+      resource_id: { get_input: wan_network_name }
+
+  wan_network_subnet:
+    type: cloudify.openstack.nodes.Subnet
+    properties:
+      resource_id: { get_input: wan_network_subnet_name }
+      subnet:
+        dns_nameservers: [8.8.8.8]
+        ip_version: 4
+        cidr: 10.20.1.1/24
+        gateway_ip: 10.20.1.2
+    relationships:
+      - target: wan_network
+        type: cloudify.relationships.contained_in
+      - target: igw_router
+        type: cloudify.openstack.subnet_connected_to_router
+
+  wan_network_port:
+    type: cloudify.openstack.nodes.Port
+    properties:
+      resource_id: { get_input: wan_network_port_name }
+    relationships:
+      - type: cloudify.relationships.contained_in
+        target: wan_network
+      - type: cloudify.relationships.depends_on
+        target: wan_network_subnet
+
+# Create route for IGW
+#
+  igw_router:
+    type: cloudify.openstack.nodes.Router
+    properties:
+      external_network: { get_input: external_network_name }
+      resource_id: { get_input: igw_router_name }
+    relationships:
+      - type: cloudify.relationships.depends_on
+        target: wan_network
+
+
 
 #  ce:
 #    type: cloudify.openstack.nodes.Server
@@ -84,118 +224,3 @@ node_templates:
 #        target: lan_network_subnet
 #######
 
-  FortinetHost:
-    type: cloudify.openstack.nodes.Server
-    properties:
-      install_agent: false
-      image: { get_input: fortinet_image }
-      flavor: { get_input: flavor }
-    relationships:
-      - target: admin_managment_ip
-        type: cloudify.openstack.server_connected_to_floating_ip
-
-      - target: lan_network_port
-        type: cloudify.openstack.server_connected_to_port
-
-      - target: wan_network_port
-        type: cloudify.openstack.server_connected_to_port
-
-  FortinetSoftware:
-    type: cloudify.nodes.SoftwareComponent
-    interfaces:
-      cloudify.interfaces.lifecycle:
-        configure:
-          implementation: fortinet.fortinet_plugin.tasks.port_config
-#           implementation: fortinet.fortinet_plugin.tasks.test
-           executor: central_deployment_agent
-#        start:
-#           implementation: fortinet.fortinet_plugin.tasks.policy_config
-#           executor: central_deployment_agent
-
-    relationships:
-      - target: lan_network_port
-        type: cloudify.relationships.connected_to
-      - target: wan_network_port
-        type: cloudify.relationships.connected_to
-      - target: FortinetHost
-        type: cloudify.relationships.contained_in
-
-# Create floating ip to access admin gui
-
-  admin_managment_ip:
-    type: cloudify.openstack.nodes.FloatingIP
-    properties:
-      floatingip:
-        floating_network_name: { get_input: external_network_name }
-
-#  Create LAN network
-
-  lan_network:
-    type: cloudify.openstack.nodes.Network
-    properties:
-      resource_id: { get_input: lan_network_name }
-
-  lan_network_subnet:
-    type: cloudify.openstack.nodes.Subnet
-    properties:
-      resource_id: { get_input: lan_network_subnet_name }
-      subnet:
-        ip_version: 4
-        cidr: 192.168.1.99/24
-    relationships:
-      - target: lan_network
-        type: cloudify.relationships.contained_in
-
-  lan_network_port:
-    type: cloudify.openstack.nodes.Port
-    properties:
-      resource_id: { get_input: lan_network_port_name }
-    relationships:
-      - type: cloudify.relationships.contained_in
-        target: lan_network
-      - type: cloudify.relationships.depends_on
-        target: lan_network_subnet
-
-## Managment network will act as WAN network
-
-#  Create WAN network
-
-  wan_network:
-    type: cloudify.openstack.nodes.Network
-    properties:
-      resource_id: { get_input: wan_network_name }
-
-  wan_network_subnet:
-    type: cloudify.openstack.nodes.Subnet
-    properties:
-      resource_id: { get_input: wan_network_subnet_name }
-      subnet:
-        dns_nameservers: [8.8.8.8]
-        ip_version: 4
-        cidr: 10.20.1.1/24
-    relationships:
-      - target: wan_network
-        type: cloudify.relationships.contained_in
-      - target: igw_router
-        type: cloudify.openstack.subnet_connected_to_router
-
-  wan_network_port:
-    type: cloudify.openstack.nodes.Port
-    properties:
-      resource_id: { get_input: wan_network_port_name }
-    relationships:
-      - type: cloudify.relationships.contained_in
-        target: wan_network
-      - type: cloudify.relationships.depends_on
-        target: wan_network_subnet
-
-# Create route for IGW
-#
-  igw_router:
-    type: cloudify.openstack.nodes.Router
-    properties:
-      external_network: { get_input: external_network_name }
-      resource_id: { get_input: igw_router_name }
-    relationships:
-      - type: cloudify.relationships.depends_on
-        target: wan_network

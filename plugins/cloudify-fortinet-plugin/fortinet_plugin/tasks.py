@@ -1,5 +1,6 @@
 from pyFG import FortiOS
 from cloudify.decorators import operation
+from cloudify.state import ctx_parameters as inputs
 
 
 forti_username = 'admin'
@@ -91,14 +92,16 @@ def route_config(ctx, **kwargs):
     fortinet_host_ip = get_host_ip(ctx)
     ctx.logger.info('Fortinet_host_ip: {0}'.format(fortinet_host_ip))
 
-    target_ip = ''
-    port_id = ''
-    gateway = ''
+    gateway = inputs['gateway']
+    port_id = inputs['port_id']
 
-    set_route(ctx, fortinet_host_ip, gateway, target_ip, port_id)
+    target_ip = '0.0.0.0'
+    portMask = '0.0.0.0'
+
+    set_route(ctx, fortinet_host_ip, gateway, target_ip, portMask, port_id)
 
 
-def set_route(ctx, fortinet_host_ip, gateway, target_ip, port_id):
+def set_route(ctx, fortinet_host_ip, gateway, target_ip, portMask, port_id):
 
     command = \
         'config router static\n' \
@@ -109,8 +112,6 @@ def set_route(ctx, fortinet_host_ip, gateway, target_ip, port_id):
         '  next\n' \
         'end' % (target_ip, portMask, gateway, port_id)
 
-    ctx.logger.info(">>:\n {0}".format(command))
-
     exec_command(ctx, command, fortinet_host_ip)
 
 
@@ -120,7 +121,7 @@ def exec_command(ctx, command, fortinet_host_ip):
     conn = FortiOS(fortinet_host_ip, username=forti_username, password=forti_password)
     conn.open()
 
-    ctx.logger.info(">>:\n {0}".format(command))
+    ctx.logger.info("Execute Command >> \n {0}".format(command))
 
     conn.execute_command(command)
     conn.close()
@@ -130,6 +131,7 @@ def get_host_ip(ctx):
     for relationship in ctx.instance.relationships:
         if 'contained_in' in relationship.type:
             return relationship.target.instance.runtime_properties['ip']
+
 
 def get_host_id(ctx):
     ctx.instance._get_node_instance_if_needed()
